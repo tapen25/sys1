@@ -8,31 +8,26 @@
 <style>
   body { font-family: sans-serif; padding: 20px; text-align: center; background: #f0f0f0; }
   input[type="text"] { padding: 10px; font-size: 1.2em; width: 200px; text-align: center; }
-  button { padding: 15px 30px; font-size: 1.2em; margin: 10px; cursor: pointer; }
-  button#send-btn { display: none; background: #4CAF50; color: white; border: none; }
-  button#start { background: #008CBA; color: white; border: none; }
-  #status, #debug { margin-top: 15px; font-weight: bold; }
+  button { padding: 15px 30px; font-size: 1.2em; margin: 10px; }
+  button#send-btn { display: none; background: #4CAF50; color: white; }
+  #status, #debug { margin-top: 15px; }
 </style>
 </head>
 
 <body>
 
-<h2>Data Logger (Tempo Only)</h2>
 <input type="text" id="subject-id" placeholder="被験者ID"><br>
 <button id="start">Start</button>
-<button id="send-btn">ログ送信</button>
+<button id="send-btn">送信</button>
 
 <div id="status">停止中</div>
 <div id="debug">Wait...</div>
 
 <script>
-// ==========================================
-// 設定
-// ==========================================
 const GAS_URL = "https://script.google.com/macros/s/AKfycbxGAOkqkvLAykyJbOldYCZ2qeAh-RpO5i9Mxd0qpktd6pP1246Zu7S4XwJit3KAUSU/exec";
 
 // ==========================================
-// シンセ設定（固定音色・単一レイヤー）
+// シンセ（単一レイヤー・固定音色）
 // ==========================================
 const polySynth = new Tone.PolySynth(Tone.Synth, {
   oscillator: { type: "sawtooth" },
@@ -41,7 +36,7 @@ const polySynth = new Tone.PolySynth(Tone.Synth, {
 }).toDestination();
 
 // ==========================================
-// 変数管理
+// 変数
 // ==========================================
 let isPlaying = false;
 let currentNoteIndex = 0;
@@ -49,20 +44,21 @@ let currentBPM = 90;
 let targetBPM = 90;
 
 let motionHistory = [];
-const HISTORY_DURATION = 1500; // 過去1.5秒のデータで計算
+const HISTORY_DURATION = 1500;
+const MOVE_THRESHOLD = 2.0;
 
-let logData = []; // ログ保存用配列
+let logData = [];
 let startTime = 0;
 let currentStd = 0;
 
 // ==========================================
-// メロディパターン (2バリエーション)
+// メロディパターン
 // ==========================================
 const patterns = {
   A: [
-    "C3","G3","E4","B3","D4","G4","E5",null,
+    "C2","G2","E3","B3","D4","G4","E5",null,
     "C5","A4","G4","E4","C4","A3","G3","E3",
-    "D3","A3","F3","C4","E4","A4","D5","F5",
+    "D2","A2","F3","C4","E4","A4","D5","F5",
     "B4","G4","F4","D4","B3","G3","F3","D3"
   ],
   B: [
@@ -75,109 +71,59 @@ const patterns = {
 let usePatternA = true;
 
 // ==========================================
-// Start ボタン処理
+// Start
 // ==========================================
 document.getElementById("start").onclick = async () => {
   const id = document.getElementById("subject-id").value.trim();
   if (!id) return alert("被験者IDを入力してください");
 
-  // iOS 13+ の加速度センサー許可リクエスト
-  if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
-    try {
-      const response = await DeviceMotionEvent.requestPermission();
-      if (response !== 'granted') return alert("センサー許可が必要です");
-    } catch (e) {
-      console.error(e);
-    }
-  }
-
   await Tone.start();
   window.addEventListener("devicemotion", handleMotion);
 
   startTime = performance.now();
-  logData = []; // ログ初期化
-  
-  // 更新ループ開始
+  logData = [];
+
   setInterval(updateLoop, 100);
 
-  // UI更新
   document.getElementById("start").style.display = "none";
   document.getElementById("send-btn").style.display = "inline-block";
   document.getElementById("status").innerText = "歩いてください (ID: " + id + ")";
 };
 
 // ==========================================
-// 送信 ボタン処理
-// ==========================================
-document.getElementById("send-btn").onclick = () => {
-  if (logData.length === 0) return alert("データがありません");
-  
-  const id = document.getElementById("subject-id").value;
-  const payload = {
-    id: id,
-    data: logData
-  };
-
-  document.getElementById("status").innerText = "送信中...";
-  document.getElementById("send-btn").disabled = true;
-
-  // sendBeacon or fetch (ここではfetchを使用)
-  fetch(GAS_URL, {
-    method: 'POST',
-    mode: 'no-cors', // GASへのPOSTはno-corsが一般的
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  }).then(() => {
-    alert("送信完了しました");
-    document.getElementById("status").innerText = "送信完了";
-    document.getElementById("send-btn").disabled = false;
-  }).catch(err => {
-    alert("送信エラー: " + err);
-    document.getElementById("status").innerText = "エラー発生";
-    document.getElementById("send-btn").disabled = false;
-  });
-};
-
-// ==========================================
-// センサー処理 (Motion)
+// 歩行処理
 // ==========================================
 function handleMotion(e) {
-  const acc = e.accelerationIncludingGravity; // 重力込みの加速度
+  const acc = e.accelerationIncludingGravity;
   if (!acc) return;
 
   const mag = Math.sqrt(acc.x**2 + acc.y**2 + acc.z**2);
   const now = performance.now();
 
-  // 履歴に追加 & 古いデータを削除
   motionHistory.push({ time: now, val: mag });
   motionHistory = motionHistory.filter(d => now - d.time < HISTORY_DURATION);
 
-  // 標準偏差 (STD) 計算
   const std = computeStd(motionHistory.map(d => d.val));
   currentStd = std;
 
-  // BPMターゲットの決定
   targetBPM = mapStdToBPM(std);
 
-  // 最初の歩き出し検知 (閾値13.0)
   if (!isPlaying && mag > 13.0) {
     startSequence();
   }
 }
 
 // ==========================================
-// メイン更新ループ (BPM更新 + ログ記録)
+// BPM 更新 + ログ
 // ==========================================
 function updateLoop() {
   if (!isPlaying) return;
 
-  // BPMをターゲットに向けて滑らかに変化させる
-  currentBPM += (targetBPM - currentBPM) * 0.05;
+  currentBPM += (targetBPM - currentBPM) * 0.02;
 
   document.getElementById("debug").innerText =
     `BPM: ${currentBPM.toFixed(1)} / STD: ${currentStd.toFixed(2)}`;
 
-  // ログ保存 (時間, STD, BPM)
   logData.push({
     time: ((performance.now() - startTime)/1000).toFixed(3),
     std: currentStd.toFixed(3),
@@ -186,29 +132,24 @@ function updateLoop() {
 }
 
 // ==========================================
-// STD -> BPM マッピングロジック
+// BPM マッピング（テンポのみ）
 // ==========================================
-const BASE_BPM = 108;      // 基準BPM
-const BASE_STD = 2.5;      // 基準となる歩行のバラつき
-const VARIATION_RANGE = 0.15; // 変動幅 (±15%)
+const BASE_BPM = 108;
+const BASE_STD = 2.5;
+const VARIATION_RANGE = 0.10;
 
 function mapStdToBPM(std) {
-  // 静止に近い状態ならBPM変更しない
   if (std < 0.5) return currentBPM;
 
-  // STDが大きい(=動きが激しい)ほどBPMを上げる計算
-  // 係数 *4 は感度調整用
-  let calcBpm = BASE_BPM + (std - BASE_STD) * 4;
-  
+  let bpm = BASE_BPM + (std - BASE_STD) * 4;
   const min = BASE_BPM * (1 - VARIATION_RANGE);
   const max = BASE_BPM * (1 + VARIATION_RANGE);
 
-  // 範囲内に収める
-  return Math.min(Math.max(calcBpm, min), max);
+  return Math.min(Math.max(bpm, min), max);
 }
 
 // ==========================================
-// シーケンス再生 (再帰的setTimeout)
+// シーケンス
 // ==========================================
 function startSequence() {
   isPlaying = true;
@@ -218,46 +159,32 @@ function startSequence() {
 
 function playNextNote() {
   const pattern = usePatternA ? patterns.A : patterns.B;
-  
-  // パターン終了時の処理
-  if (currentNoteIndex >= pattern.length) {
-    finishSequence();
-    return;
-  }
+  if (currentNoteIndex >= pattern.length) return finishSequence();
 
-  // 現在のBPMから次の音までの時間を計算
-  const beatTime = 60 / currentBPM; 
-  const baseDur = beatTime / 2; // 8分音符ベース
-  
-  // スウィング感 (偶数番目と奇数番目で長さを変える)
-  const swing = 0.25; 
+  const beatTime = 60 / currentBPM;
+  const baseDur = beatTime / 2;
+  const swing = 0.25;
+
   const duration = (currentNoteIndex % 2 === 0)
     ? baseDur * (1 + swing)
     : baseDur * (1 - swing);
 
-  // 発音
   const note = pattern[currentNoteIndex];
-  if (note) {
-    // 音の長さはdurationの80% (歯切れよくするため)
-    polySynth.triggerAttackRelease(note, duration * 0.8);
-  }
+  if (note) polySynth.triggerAttackRelease(note, duration * 0.8);
 
   currentNoteIndex++;
-  
-  // 次の音を予約
   setTimeout(playNextNote, duration * 1000);
 }
 
 function finishSequence() {
   isPlaying = false;
-  usePatternA = !usePatternA; // パターン切り替え
-  targetBPM = 90; // 停止時はBPMリセット
-  document.getElementById("status").innerText = "待機中... (また歩くと再開)";
-  // ここではログ送信しない（ユーザーが送信ボタンを押すまで溜め続ける）
+  usePatternA = !usePatternA;
+  targetBPM = 90;
+  document.getElementById("status").innerText = "待機中...";
 }
 
 // ==========================================
-// 計算ユーティリティ
+// Utility
 // ==========================================
 function computeStd(arr) {
   if (!arr.length) return 0;
