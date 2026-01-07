@@ -3,135 +3,262 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Data Logger (BPM Only)</title>
+<title>Data Logger (Tempo Only)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
 <style>
   body { font-family: sans-serif; padding: 20px; text-align: center; background: #f0f0f0; }
-  input { padding: 10px; font-size: 1.2em; width: 200px; text-align: center; }
-  button { padding: 15px 30px; font-size: 1.2em; margin: 10px; }
-  #status, #debug { margin-top: 15px; }
+  input[type="text"] { padding: 10px; font-size: 1.2em; width: 200px; text-align: center; }
+  button { padding: 15px 30px; font-size: 1.2em; margin: 10px; cursor: pointer; }
+  button#send-btn { display: none; background: #4CAF50; color: white; border: none; }
+  button#start { background: #008CBA; color: white; border: none; }
+  #status, #debug { margin-top: 15px; font-weight: bold; }
 </style>
 </head>
 
 <body>
 
+<h2>Data Logger (Tempo Only)</h2>
 <input type="text" id="subject-id" placeholder="被験者ID"><br>
 <button id="start">Start</button>
+<button id="send-btn">ログ送信</button>
 
 <div id="status">停止中</div>
-<div id="debug">---</div>
+<div id="debug">Wait...</div>
 
 <script>
-// ===============================
-// シンセ（単一・固定）
-// ===============================
-const synth = new Tone.Synth({
+// ==========================================
+// 設定
+// ==========================================
+const GAS_URL = "https://script.google.com/macros/s/AKfycbxGAOkqkvLAykyJbOldYCZ2qeAh-RpO5i9Mxd0qpktd6pP1246Zu7S4XwJit3KAUSU/exec";
+
+// ==========================================
+// シンセ設定（固定音色・単一レイヤー）
+// ==========================================
+const polySynth = new Tone.PolySynth(Tone.Synth, {
   oscillator: { type: "sawtooth" },
-  envelope: { attack: 0.1, release: 0.5 },
-  volume: -6
+  envelope: { attack: 0.1, decay: 0.2, sustain: 0.5, release: 1 },
+  volume: -5
 }).toDestination();
 
-// ===============================
-// 変数
-// ===============================
+// ==========================================
+// 変数管理
+// ==========================================
 let isPlaying = false;
-let bpm = 108;
-let targetBPM = 108;
-let noteIndex = 0;
+let currentNoteIndex = 0;
+let currentBPM = 90;
+let targetBPM = 90;
 
 let motionHistory = [];
-const HISTORY_DURATION = 1500;
+const HISTORY_DURATION = 1500; // 過去1.5秒のデータで計算
+
+let logData = []; // ログ保存用配列
+let startTime = 0;
 let currentStd = 0;
 
-// ===============================
-// メロディ（固定）
-// ===============================
-const pattern = [
-  "C3","E3","G3",null,
-  "C4","G3","E3",null
-];
+// ==========================================
+// メロディパターン (2バリエーション)
+// ==========================================
+const patterns = {
+  A: [
+    "C3","G3","E4","B3","D4","G4","E5",null,
+    "C5","A4","G4","E4","C4","A3","G3","E3",
+    "D3","A3","F3","C4","E4","A4","D5","F5",
+    "B4","G4","F4","D4","B3","G3","F3","D3"
+  ],
+  B: [
+    "C3",null,"E4","G4","B4",null,"C5","G3",
+    "A3","C4","E4","G4","A4","C5","E5",null,
+    "F3","A3","C4","E4","G4","A4","C5",null,
+    "G2","B2","D3","F3","G3","B3","D4","G4"
+  ]
+};
+let usePatternA = true;
 
-// ===============================
-// Start
-// ===============================
+// ==========================================
+// Start ボタン処理
+// ==========================================
 document.getElementById("start").onclick = async () => {
   const id = document.getElementById("subject-id").value.trim();
   if (!id) return alert("被験者IDを入力してください");
 
+  // iOS 13+ の加速度センサー許可リクエスト
+  if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+    try {
+      const response = await DeviceMotionEvent.requestPermission();
+      if (response !== 'granted') return alert("センサー許可が必要です");
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
   await Tone.start();
   window.addEventListener("devicemotion", handleMotion);
 
-  isPlaying = true;
-  noteIndex = 0;
-  playNext();
+  startTime = performance.now();
+  logData = []; // ログ初期化
+  
+  // 更新ループ開始
+  setInterval(updateLoop, 100);
 
-  setInterval(updateBPM, 100);
-
-  document.getElementById("status").innerText = `計測中 (ID: ${id})`;
+  // UI更新
+  document.getElementById("start").style.display = "none";
+  document.getElementById("send-btn").style.display = "inline-block";
+  document.getElementById("status").innerText = "歩いてください (ID: " + id + ")";
 };
 
-// ===============================
-// 加速度処理
-// ===============================
-function handleMotion(e) {
-  const a = e.accelerationIncludingGravity;
-  if (!a) return;
+// ==========================================
+// 送信 ボタン処理
+// ==========================================
+document.getElementById("send-btn").onclick = () => {
+  if (logData.length === 0) return alert("データがありません");
+  
+  const id = document.getElementById("subject-id").value;
+  const payload = {
+    id: id,
+    data: logData
+  };
 
-  const mag = Math.sqrt(a.x*a.x + a.y*a.y + a.z*a.z);
+  document.getElementById("status").innerText = "送信中...";
+  document.getElementById("send-btn").disabled = true;
+
+  // sendBeacon or fetch (ここではfetchを使用)
+  fetch(GAS_URL, {
+    method: 'POST',
+    mode: 'no-cors', // GASへのPOSTはno-corsが一般的
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  }).then(() => {
+    alert("送信完了しました");
+    document.getElementById("status").innerText = "送信完了";
+    document.getElementById("send-btn").disabled = false;
+  }).catch(err => {
+    alert("送信エラー: " + err);
+    document.getElementById("status").innerText = "エラー発生";
+    document.getElementById("send-btn").disabled = false;
+  });
+};
+
+// ==========================================
+// センサー処理 (Motion)
+// ==========================================
+function handleMotion(e) {
+  const acc = e.accelerationIncludingGravity; // 重力込みの加速度
+  if (!acc) return;
+
+  const mag = Math.sqrt(acc.x**2 + acc.y**2 + acc.z**2);
   const now = performance.now();
 
-  motionHistory.push({ t: now, v: mag });
-  motionHistory = motionHistory.filter(d => now - d.t < HISTORY_DURATION);
+  // 履歴に追加 & 古いデータを削除
+  motionHistory.push({ time: now, val: mag });
+  motionHistory = motionHistory.filter(d => now - d.time < HISTORY_DURATION);
 
-  currentStd = computeStd(motionHistory.map(d => d.v));
-  targetBPM = mapStdToBPM(currentStd);
+  // 標準偏差 (STD) 計算
+  const std = computeStd(motionHistory.map(d => d.val));
+  currentStd = std;
+
+  // BPMターゲットの決定
+  targetBPM = mapStdToBPM(std);
+
+  // 最初の歩き出し検知 (閾値13.0)
+  if (!isPlaying && mag > 13.0) {
+    startSequence();
+  }
 }
 
-// ===============================
-// BPM更新
-// ===============================
-function updateBPM() {
-  bpm += (targetBPM - bpm) * 0.05;
-
-  document.getElementById("debug").innerText =
-    `BPM: ${bpm.toFixed(1)} / STD: ${currentStd.toFixed(2)}`;
-}
-
-// ===============================
-// BPMマッピング（テンポのみ）
-// ===============================
-const BASE_BPM = 108;
-const BASE_STD = 2.5;
-const RANGE = 0.10;
-
-function mapStdToBPM(std) {
-  if (std < 0.5) return bpm;
-
-  const raw = BASE_BPM + (std - BASE_STD) * 4;
-  const min = BASE_BPM * (1 - RANGE);
-  const max = BASE_BPM * (1 + RANGE);
-
-  return Math.min(Math.max(raw, min), max);
-}
-
-// ===============================
-// 再生
-// ===============================
-function playNext() {
+// ==========================================
+// メイン更新ループ (BPM更新 + ログ記録)
+// ==========================================
+function updateLoop() {
   if (!isPlaying) return;
 
-  const note = pattern[noteIndex % pattern.length];
-  const interval = 60 / bpm;
+  // BPMをターゲットに向けて滑らかに変化させる
+  currentBPM += (targetBPM - currentBPM) * 0.05;
 
-  if (note) synth.triggerAttackRelease(note, interval * 0.8);
+  document.getElementById("debug").innerText =
+    `BPM: ${currentBPM.toFixed(1)} / STD: ${currentStd.toFixed(2)}`;
 
-  noteIndex++;
-  setTimeout(playNext, interval * 1000);
+  // ログ保存 (時間, STD, BPM)
+  logData.push({
+    time: ((performance.now() - startTime)/1000).toFixed(3),
+    std: currentStd.toFixed(3),
+    bpm: currentBPM.toFixed(2)
+  });
 }
 
-// ===============================
-// Utility
-// ===============================
+// ==========================================
+// STD -> BPM マッピングロジック
+// ==========================================
+const BASE_BPM = 108;      // 基準BPM
+const BASE_STD = 2.5;      // 基準となる歩行のバラつき
+const VARIATION_RANGE = 0.15; // 変動幅 (±15%)
+
+function mapStdToBPM(std) {
+  // 静止に近い状態ならBPM変更しない
+  if (std < 0.5) return currentBPM;
+
+  // STDが大きい(=動きが激しい)ほどBPMを上げる計算
+  // 係数 *4 は感度調整用
+  let calcBpm = BASE_BPM + (std - BASE_STD) * 4;
+  
+  const min = BASE_BPM * (1 - VARIATION_RANGE);
+  const max = BASE_BPM * (1 + VARIATION_RANGE);
+
+  // 範囲内に収める
+  return Math.min(Math.max(calcBpm, min), max);
+}
+
+// ==========================================
+// シーケンス再生 (再帰的setTimeout)
+// ==========================================
+function startSequence() {
+  isPlaying = true;
+  currentNoteIndex = 0;
+  playNextNote();
+}
+
+function playNextNote() {
+  const pattern = usePatternA ? patterns.A : patterns.B;
+  
+  // パターン終了時の処理
+  if (currentNoteIndex >= pattern.length) {
+    finishSequence();
+    return;
+  }
+
+  // 現在のBPMから次の音までの時間を計算
+  const beatTime = 60 / currentBPM; 
+  const baseDur = beatTime / 2; // 8分音符ベース
+  
+  // スウィング感 (偶数番目と奇数番目で長さを変える)
+  const swing = 0.25; 
+  const duration = (currentNoteIndex % 2 === 0)
+    ? baseDur * (1 + swing)
+    : baseDur * (1 - swing);
+
+  // 発音
+  const note = pattern[currentNoteIndex];
+  if (note) {
+    // 音の長さはdurationの80% (歯切れよくするため)
+    polySynth.triggerAttackRelease(note, duration * 0.8);
+  }
+
+  currentNoteIndex++;
+  
+  // 次の音を予約
+  setTimeout(playNextNote, duration * 1000);
+}
+
+function finishSequence() {
+  isPlaying = false;
+  usePatternA = !usePatternA; // パターン切り替え
+  targetBPM = 90; // 停止時はBPMリセット
+  document.getElementById("status").innerText = "待機中... (また歩くと再開)";
+  // ここではログ送信しない（ユーザーが送信ボタンを押すまで溜め続ける）
+}
+
+// ==========================================
+// 計算ユーティリティ
+// ==========================================
 function computeStd(arr) {
   if (!arr.length) return 0;
   const m = arr.reduce((s,v)=>s+v,0)/arr.length;
