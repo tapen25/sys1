@@ -334,7 +334,7 @@ function sendCSVToGmail() {
   const subjectId = document.getElementById("subject-id").value;
   
   // CSVヘッダー
-  let csv = "Time,STD,RawBPM,TargetBPM,CurrentBPM,IsPlaying,ExploreCount\n";
+  let csv = "Time,STD,RawBPM,IsPlaying,isMoving,exploreCount\n";
 
   // データ行
   logData.forEach(r => {
