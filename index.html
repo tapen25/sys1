@@ -77,20 +77,20 @@ let currentStd = 0;
 // メロディパターン
 // ==========================================
 const patterns = {
-  A: [
-    "C2","G2","E3","B3","D4","G4","E5",null,
-    "C5","A4","G4","E4","C4","A3","G3","E3",
-    "D2","A2","F3","C4","E4","A4","D5","F5",
-    "B4","G4","F4","D4","B3","G3","F3","D3"
-  ],
-  B: [
-    "C3",null,"E4","G4","B4",null,"C5","G3",
-    "A3","C4","E4","G4","A4","C5","E5",null,
-    "F3","A3","C4","E4","G4","A4","C5",null,
-    "G2","B2","D3","F3","G3","B3","D4","G4"
-  ]
+  A1: [ "C2","G2","E3","B3","D4","G4","E5",null, "C5","A4","G4","E4","C4","A3","G3","E3" ],
+  A2: [ "D2","A2","F3","C4","E4","A4","D5","F5", "B4","G4","F4","D4","B3","G3","F3","D3" ],
+  B1: [ "C3",null,"E4","G4","B4",null,"C5","G3", "A3","C4","E4","G4","A4","C5","E5",null ],
+  B2: [ "F3","A3","C4","E4","G4","A4","C5",null, "G2","B2","D3","F3","G3","B3","D4","G4" ]
 };
-let usePatternA = true;
+
+const harmonyPatterns = {
+  A1: [ "E2","B2","G3","D4","F#4","B4","G5",null, "E5","C5","B4","G4","E4","C4","B3","G3" ],
+  A2: [ "F2","C3","A3","E4","G4","C5","F5","A5", "D5","B4","A4","F4","D4","B3","A3","F3" ],
+  B1: [ "E3",null,"G4","B4","D5",null,"E5","B3", "C4","E4","G4","B4","C5","E5","G5",null ],
+  B2: [ "A3","C4","E4","G4","B4","C5","E5",null, "B2","D3","F3","A3","B3","D4","F4","B4" ]
+};
+const playOrder = ["A1", "B1", "A2", "B2"];
+let currentPatternIndex = 0;
 
 // ==========================================
 // Wake Lock (画面消灯防止)
@@ -235,34 +235,41 @@ function stopKick() {
 }
 
 function playNextNote() {
-  // 停止されたらループを抜ける
-  if (!isPlaying) return;
+  const patternKey = playOrder[currentPatternIndex];
+  const pattern = patterns[patternKey];
 
-  const pattern = usePatternA ? patterns.A : patterns.B;
-  if (currentNoteIndex >= pattern.length) return finishSequence();
+  if (currentNoteIndex >= pattern.length) {
+    finishSequence();
+    return;
+  }
 
   const beatTime = 60 / currentBPM;
-  const baseDur = beatTime / 2;
+  const base = beatTime / 2;
   const swing = 0.25;
-
-  const duration = (currentNoteIndex % 2 === 0)
-    ? baseDur * (1 + swing)
-    : baseDur * (1 - swing);
+  const duration = currentNoteIndex % 2 === 0
+    ? base * (1 + swing)
+    : base * (1 - swing);
 
   const note = pattern[currentNoteIndex];
   if (note) polySynth.triggerAttackRelease(note, duration * 0.8);
 
-  // 次の音へ
+  document.getElementById("status").innerText =
+    `再生中 ${patternKey} (${currentNoteIndex + 1}/16)`;
+
   setTimeout(() => {
     currentNoteIndex++;
     playNextNote();
   }, duration * 1000);
 }
 
+
 function finishSequence() {
   isPlaying = false;
-  stopKick();  
-  usePatternA = !usePatternA;
+  stopKick(); 
+  currentNoteIndex = 0; 
+  // 次の16音パターンへ
+  currentPatternIndex =
+    (currentPatternIndex + 1) % playOrder.length;
   targetBPM = 90;
   document.getElementById("status").innerText = "待機中... (動き続けると再開)";
   
