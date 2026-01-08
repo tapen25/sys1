@@ -205,44 +205,42 @@ function updateLoop() {
 }
 
 // ==========================================
-// BPM マッピング（テンポのみ）
-// ==========================================
-// ==========================================
 // BPM マッピング（相対変化・リミッター付き）
 // ==========================================
-const BASE_BPM = 108;       // 基準BPM
-const BASE_STD = 2.5;       // 基準となる歩行の強さ（この値より強ければBPM増、弱ければBPM減）
-const LIMIT_RATIO = 0.10;   // 変動範囲を±10%に制限
-const SENSITIVITY = 0.08;   // 感度（値を大きくすると、少しの変化で上限/下限に達しやすくなる）
+const BASE_BPM = 108;       // 基準テンポ
+const BASE_STD = 2.5;       // 「ふつうの歩行」とみなす揺れの強さ（基準点）
+const LIMIT_RATIO = 0.10;   // 変動率の上限（10% = 0.1）
+const SENSITIVITY = 0.08;   // 感度（値が大きいほど、少しの変化でBPMが大きく変わる）
 
 // ログ用変数
-let rawBPM = BASE_BPM;      // リミッターをかける前の計算値（記録用）
+let rawBPM = BASE_BPM;      
 
 function mapStdToBPM(std) {
-  // 1. 停止中（ノイズレベル）の場合は基準BPMに戻す
+  // 1. 完全に止まっている、またはノイズレベルの場合は基準BPMに戻す
   if (std < 0.5) {
     rawBPM = BASE_BPM; 
     return BASE_BPM; 
   }
 
-  // 2. 「基準の強さ」との差分を計算（相対変化）
-  //    (プラスなら歩行が速くなった、マイナスなら遅くなったと判定)
-  const diff = std - BASE_STD;
+  // 2. 相対変化の計算
+  //    現在の揺れ(std)が、基準(BASE_STD)より大きいか小さいか計算
+  const diff = std - BASE_STD; 
   
-  // 3. 差分を変化率に変換（例: +0.05 なら +5%）
+  // 3. 変化率への変換
+  //    (例: 揺れが基準より1.0強ければ、1.0 * 0.08 = +8% 速くする)
   let changeRatio = diff * SENSITIVITY;
 
-  // 4. 変化率を ±10% の範囲に強制的に制限 (Clamp)
-  //    これにより、どんなに激しく動いても +10% 以上にはならず、
-  //    どんなにゆっくりでも -10% 以下にはなりません。
+  // 4. リミッター処理 (±10%に制限)
+  //    計算結果が +0.1 を超えたら +0.1 に、-0.1 を下回ったら -0.1 に固定
   if (changeRatio > LIMIT_RATIO) changeRatio = LIMIT_RATIO;
   if (changeRatio < -LIMIT_RATIO) changeRatio = -LIMIT_RATIO;
 
-  // 5. 最終的なBPMを算出
-  //    Target = 108 * (1 + 制限済みの変化率)
+  // 5. 最終ターゲットBPMの決定
+  //    基準BPM(108) に (1 + 変化率) を掛ける
+  //    範囲: 97.2 BPM (-10%) 〜 118.8 BPM (+10%)
   const target = BASE_BPM * (1 + changeRatio);
 
-  // ログ用にリミット前の値も計算しておく（デバッグで見たい場合）
+  // ログ用（リミッターにかかる前の計算値）
   rawBPM = BASE_BPM * (1 + diff * SENSITIVITY);
 
   return target;
