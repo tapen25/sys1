@@ -214,8 +214,9 @@ let rawBPM = BASE_BPM;
 
 function mapStdToBPM(std) {
  // if (std < 0.5) return currentBPM;
+  if (std < 0.5) return 90;
 
-  awBPM = BASE_BPM + (std - BASE_STD) * 4;
+  rawBPM = BASE_BPM + (std - BASE_STD) * 4;
 
   const min = BASE_BPM * (1 - VARIATION_RANGE);
   const max = BASE_BPM * (1 + VARIATION_RANGE);
