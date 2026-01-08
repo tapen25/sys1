@@ -41,6 +41,21 @@ const polySynth = new Tone.PolySynth(Tone.Synth, {
   volume: -5
 }).toDestination();
 
+const kick = new Tone.MembraneSynth({
+  pitchDecay: 0.05,
+  octaves: 6,
+  oscillator: { type: "sine" },
+  envelope: {
+    attack: 0.001,
+    decay: 0.3,
+    sustain: 0,
+    release: 0.1
+  },
+  volume: -6
+}).toDestination();
+
+let kickTimer = null;
+
 // ==========================================
 // 変数
 // ==========================================
@@ -169,7 +184,7 @@ function updateLoop() {
     time: ((performance.now() - startTime)/1000).toFixed(3),
     std: currentStd.toFixed(3),
     bpm: currentBPM.toFixed(2),
-    isPlaying: isPlaying ? 1 : 0 // 状態も記録しておくと分析しやすいです
+    isPlaying: isPlaying ? 1 : 0 
   });
 }
 
@@ -189,14 +204,34 @@ function mapStdToBPM(std) {
 
   return Math.min(Math.max(bpm, min), max);
 }
-
 // ==========================================
 // シーケンス
 // ==========================================
 function startSequence() {
   isPlaying = true;
   currentNoteIndex = 0;
+  startKick();
   playNextNote();
+}
+function startKick() {
+  stopKick(); // 念のため二重防止
+
+  const playKick = () => {
+    if (!isPlaying) return;
+
+    kick.triggerAttackRelease("C1", "8n");
+
+    const interval = (60 / currentBPM) * 1000; // 4分音符
+    kickTimer = setTimeout(playKick, interval);
+  };
+
+  playKick();
+}
+function stopKick() {
+  if (kickTimer) {
+    clearTimeout(kickTimer);
+    kickTimer = null;
+  }
 }
 
 function playNextNote() {
@@ -226,6 +261,7 @@ function playNextNote() {
 
 function finishSequence() {
   isPlaying = false;
+  stopKick();  
   usePatternA = !usePatternA;
   targetBPM = 90;
   document.getElementById("status").innerText = "待機中... (動き続けると再開)";
@@ -239,6 +275,7 @@ function finishSequence() {
 function sendCSVToGmail() {
   isRecording = false; // 記録停止
   isPlaying = false;   // 再生停止
+  stopKick();
   document.getElementById("status").innerText = "送信処理中...";
 
   if (!logData.length) {
