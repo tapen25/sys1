@@ -68,6 +68,10 @@ let targetBPM = 90;
 let motionHistory = [];
 const HISTORY_DURATION = 1500;
 // const MOVE_THRESHOLD = 2.0; // 今回は使用していませんが、必要なら復活させてください
+let exploratoryActionCount = 0;
+let isUserMoving = false;
+const MOVE_THRESHOLD = 2.0;
+
 
 let logData = [];
 let startTime = 0;
@@ -179,12 +183,19 @@ function updateLoop() {
   const statusText = isPlaying ? "再生中" : "待機中";
   document.getElementById("debug").innerText =
     `BPM: ${currentBPM.toFixed(1)} / STD: ${currentStd.toFixed(2)} (${statusText})`;
+  const nowMoving = currentStd > MOVE_THRESHOLD;
+  if (nowMoving !== isUserMoving) {
+    exploratoryActionCount++;
+    isUserMoving = nowMoving;
+  }
 
   logData.push({
     time: ((performance.now() - startTime)/1000).toFixed(3),
     std: currentStd.toFixed(3),
     bpm: currentBPM.toFixed(2),
-    isPlaying: isPlaying ? 1 : 0 
+    isPlaying: isPlaying ? 1 : 0,
+    exploreCount: exploratoryActionCount
+
   });
 }
 
@@ -293,7 +304,7 @@ function sendCSVToGmail() {
   const subjectId = document.getElementById("subject-id").value;
   
   // CSVヘッダー
-  let csv = "Time,STD,BPM,IsPlaying\n";
+  let csv = "Time,STD,BPM,IsPlaying,ExploreCount\n";
   
   // データ行
   logData.forEach(r => {
