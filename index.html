@@ -253,8 +253,8 @@ function playNextNote() {
   const note = pattern[currentNoteIndex];
   if (note) polySynth.triggerAttackRelease(note, duration * 0.8);
 
-  document.getElementById("status").innerText =
-    `再生中 ${patternKey} (${currentNoteIndex + 1}/16)`;
+  /*document.getElementById("status").innerText =
+    `再生中 ${patternKey} (${currentNoteIndex + 1}/16)`;*/
 
   setTimeout(() => {
     currentNoteIndex++;
