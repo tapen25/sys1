@@ -126,6 +126,8 @@ document.getElementById("start").onclick = async () => {
 
   startTime = performance.now();
   logData = [];
+  exploratoryActionCount = 0;
+  isUserMoving = false;
   isRecording = true; // 記録開始
 
   setInterval(updateLoop, 100);
@@ -308,7 +310,7 @@ function sendCSVToGmail() {
   
   // データ行
   logData.forEach(r => {
-    csv += `${r.time},${r.std},${r.bpm},${r.isPlaying}\n`;
+    csv += `${r.time},${r.std},${r.bpm},${r.isPlaying},${r.exploreCount}\n`;
   });
 
   fetch(GAS_URL, {
