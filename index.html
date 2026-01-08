@@ -65,6 +65,7 @@ let currentNoteIndex = 0;
 let currentBPM = 90;
 let targetBPM = 90;
 
+
 let motionHistory = [];
 const HISTORY_DURATION = 1500;
 // const MOVE_THRESHOLD = 2.0; // 今回は使用していませんが、必要なら復活させてください
@@ -194,6 +195,7 @@ function updateLoop() {
   logData.push({
     time: ((performance.now() - startTime)/1000).toFixed(3),
     std: currentStd.toFixed(3),
+    rawBPM: rawBPM.toFixed(2),
     bpm: currentBPM.toFixed(2),
     isPlaying: isPlaying ? 1 : 0,
     isMoving: isUserMoving ? 1 : 0,
@@ -208,15 +210,18 @@ function updateLoop() {
 const BASE_BPM = 108;
 const BASE_STD = 2.5;
 const VARIATION_RANGE = 0.10;
+let rawBPM = BASE_BPM;
 
 function mapStdToBPM(std) {
-  if (std < 0.5) return currentBPM;
+ // if (std < 0.5) return currentBPM;
 
-  let bpm = BASE_BPM + (std - BASE_STD) * 4;
+  awBPM = BASE_BPM + (std - BASE_STD) * 4;
+
   const min = BASE_BPM * (1 - VARIATION_RANGE);
   const max = BASE_BPM * (1 + VARIATION_RANGE);
 
-  return Math.min(Math.max(bpm, min), max);
+  // 制限付き targetBPM
+  return Math.min(Math.max(rawBPM, min), max);
 }
 // ==========================================
 // シーケンス
@@ -307,8 +312,8 @@ function sendCSVToGmail() {
   const subjectId = document.getElementById("subject-id").value;
   
   // CSVヘッダー
-  let csv = "Time,STD,BPM,IsPlaying,IsMoving,ExploreCount\n";
-  
+  let csv = "Time,STD,RawBPM,TargetBPM,CurrentBPM,IsPlaying,ExploreCount\n";
+
   // データ行
   logData.forEach(r => {
     csv += `${r.time},${r.std},${r.bpm},${r.isPlaying},${r.isMoving},${r.exploreCount}\n`;
