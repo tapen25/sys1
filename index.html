@@ -196,6 +196,7 @@ function updateLoop() {
     std: currentStd.toFixed(3),
     bpm: currentBPM.toFixed(2),
     isPlaying: isPlaying ? 1 : 0,
+    isMoving: isUserMoving ? 1 : 0,
     exploreCount: exploratoryActionCount
 
   });
@@ -306,11 +307,11 @@ function sendCSVToGmail() {
   const subjectId = document.getElementById("subject-id").value;
   
   // CSVヘッダー
-  let csv = "Time,STD,BPM,IsPlaying,ExploreCount\n";
+  let csv = "Time,STD,BPM,IsPlaying,IsMoving,ExploreCount\n";
   
   // データ行
   logData.forEach(r => {
-    csv += `${r.time},${r.std},${r.bpm},${r.isPlaying},${r.exploreCount}\n`;
+    csv += `${r.time},${r.std},${r.bpm},${r.isPlaying},${r.isMoving},${r.exploreCount}\n`;
   });
 
   fetch(GAS_URL, {
